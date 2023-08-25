@@ -10,6 +10,7 @@
 #include <ros/ros.h>
 #include <string>
 #include <tf/transform_broadcaster.h>
+#include <tf2_ros/static_transform_broadcaster.h>
 #include <visualization_msgs/InteractiveMarker.h>
 
 void testFeedback(
@@ -25,6 +26,7 @@ class InteractiveTf
 
   geometry_msgs::Pose pose_;
   tf::TransformBroadcaster br_;
+  tf2_ros::StaticTransformBroadcaster static_br_;
   std::string parent_frame_;
   std::string frame_;
   void updateTf(int, const ros::TimerEvent& event);
@@ -39,14 +41,20 @@ InteractiveTf::InteractiveTf() :
   parent_frame_("map"),
   frame_("interactive_tf")
 {
-  server_.reset(new interactive_markers::InteractiveMarkerServer("interactive_tf"));
-  pose_.orientation.w = 1.0;
+  server_.reset(new interactive_markers::InteractiveMarkerServer(ros::this_node::getName()));
 
   // TODO(lucasw) need way to get parameters out- tf echo would work
   float scale_ = 1.0;
-  ros::param::get("~scale", scale_);
-  ros::param::get("~parent_frame", parent_frame_);
-  ros::param::get("~frame", frame_);
+  ros::param::param<float>("~scale", scale_, 1.0);
+  ros::param::param<std::string>("~parent_frame", parent_frame_, "world");
+  ros::param::param<std::string>("~frame", frame_, "interactive_tf");
+  ros::param::param<double>("~initial_pos_x", pose_.position.x, 0.0);
+  ros::param::param<double>("~initial_pos_y", pose_.position.y, 0.0);
+  ros::param::param<double>("~initial_pos_z", pose_.position.z, 0.0);
+  ros::param::param<double>("~initial_rot_x", pose_.orientation.x, 0.0);
+  ros::param::param<double>("~initial_rot_y", pose_.orientation.y, 0.0);
+  ros::param::param<double>("~initial_rot_z", pose_.orientation.z, 0.0);
+  ros::param::param<double>("~initial_rot_w", pose_.orientation.w, 1.0);
 
   int_marker_.header.frame_id = parent_frame_;
   // http://answers.ros.org/question/262866/interactive-marker-attached-to-a-moving-frame/
@@ -61,7 +69,8 @@ InteractiveTf::InteractiveTf() :
   visualization_msgs::InteractiveMarkerControl control;
 
   // TODO(lucasw) get roll pitch yaw and set as defaults
-
+  
+  control.orientation_mode = visualization_msgs::InteractiveMarkerControl::FIXED;
   control.orientation.w = 1;
   control.orientation.x = 1;
   control.orientation.y = 0;
@@ -125,14 +134,18 @@ InteractiveTf::~InteractiveTf()
 
 void InteractiveTf::updateTf(int, const ros::TimerEvent& event)
 {
-  tf::Transform transform;
-  transform.setOrigin(tf::Vector3(pose_.position.x, pose_.position.y, pose_.position.z));
-  transform.setRotation(tf::Quaternion(pose_.orientation.x,
-      pose_.orientation.y,
-      pose_.orientation.z,
-      pose_.orientation.w));
-  br_.sendTransform(tf::StampedTransform(transform, ros::Time::now(),
-      parent_frame_, frame_));
+  geometry_msgs::TransformStamped transform_msg;
+  transform_msg.child_frame_id = frame_;
+  transform_msg.header.frame_id = parent_frame_;
+  transform_msg.header.stamp = ros::Time::now();
+  transform_msg.transform.translation.x = pose_.position.x;
+  transform_msg.transform.translation.y = pose_.position.y;
+  transform_msg.transform.translation.z = pose_.position.z;
+  transform_msg.transform.rotation.x = pose_.orientation.x;
+  transform_msg.transform.rotation.y = pose_.orientation.y;
+  transform_msg.transform.rotation.z = pose_.orientation.z;
+  transform_msg.transform.rotation.w = pose_.orientation.w;
+  static_br_.sendTransform(transform_msg);
 }
 
 void InteractiveTf::processFeedback(
